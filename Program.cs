@@ -95,7 +95,8 @@ namespace redditBot
                 }else{
                     user.FlairCount[post.LinkFlairText] += 1;
                     if(user.FlairCount[post.LinkFlairText] > FlairConfig[post.LinkFlairText]){
-                        await reddit.ComposePrivateMessageAsync($"Automatic Flair Count Detection", $"The User {post.AuthorName} posted {user.FlairCount[post.LinkFlairText]} Posts with flair {post.LinkFlairText} this week, last one: [{post.Title}]({post.Permalink})", Config["subreddit"]);
+                        await post.ReportAsync(ReportType.Other, $"post flooding");
+                        //await reddit.ComposePrivateMessageAsync($"Automatic Flair Count Detection", $"The User {post.AuthorName} posted {user.FlairCount[post.LinkFlairText]} Posts with flair {post.LinkFlairText} this week, last one: [{post.Title}]({post.Permalink})", Config["subreddit"]);
                     }
                 }
                 user.lastEdit = post.CreatedUTC;
