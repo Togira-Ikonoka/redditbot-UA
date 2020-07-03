@@ -115,14 +115,15 @@ namespace redditBot
             Thing parent = comment.Parent ?? await reddit.GetThingByFullnameAsync(comment.ParentId);
 
             if(parent is Post && (parent as Post).AuthorName.Equals(comment.AuthorName)){ //Comment is Toplevel and by the Post Auther
-                String commentline = comment.Body.Split("  \n")[0].Split("\n\n")[0];
+                string commentline = comment.Body.Split("  \n")[0].Split("\n\n")[0];
+                string commentSummary = commentline.Length > 50 ? commentline.Substring(0, 50)+"..." : commentline;
                 lock(lockKeyDistributor[comment.ParentId]){
                     if(!topLevelSummaries.ContainsKey(comment.ParentId)){ //send the Sticky Message
-                        topLevelSummaries[comment.ParentId] = ((parent as Post).CommentAsync(String.Format("{0} has made the following comment(s) regarding their post:   \n[{1}]({2})", (parent as Post).AuthorName, commentline.Length > 50 ? commentline.Substring(0, 50)+"..." : commentline, comment.Permalink)).Result);
+                        topLevelSummaries[comment.ParentId] = ((parent as Post).CommentAsync(String.Format($"{(parent as Post).AuthorName} has made the following comment(s) regarding their post:   \n[{commentSummary}]({comment.Permalink})")).Result);
                         topLevelSummaries[comment.ParentId].DistinguishAsync(DistinguishType.Moderator, true).Wait();
                     }else{ // append to the Sticky Message
                         Comment botComment = topLevelSummaries[comment.ParentId];
-                        botComment.EditTextAsync(botComment.Body + String.Format("  \n[{0}]({1})", commentline.Length > 50 ? commentline.Substring(0, 50)+"..." : commentline, comment.Permalink)).Wait();
+                        botComment.EditTextAsync(botComment.Body + String.Format($"  \n[{commentSummary}]({comment.Permalink})")).Wait();
                     }
                 }
             }
