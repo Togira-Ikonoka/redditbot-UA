@@ -13,15 +13,6 @@ namespace redditBot
 {
     class Program
     {
-        class User{
-            public Dictionary<string, int> FlairCount;
-            public DateTime lastEdit;
-
-            public User(){
-                FlairCount = new Dictionary<string, int>();
-                lastEdit = DateTime.MinValue;
-            }
-        }
         static Reddit reddit;        
         private DateTime applicationStart;
 
@@ -29,6 +20,8 @@ namespace redditBot
         private static Dictionary<string, int> FlairConfig;
 
         private static Subreddit subreddit;
+        private static Dictionary<string, Comment> topLevelSummaries = new Dictionary<string, Comment>();
+        private static Dictionary<string, NewCommentLock> lockKeyDistributor = new Dictionary<string, NewCommentLock>();
 
         static void Main(string[] args)
 
@@ -70,7 +63,7 @@ namespace redditBot
             if(post.CreatedUTC < applicationStart) return; //old post
             //Moved to newComment, only send the sticky message if there actually are comments
             //await (await post.CommentAsync(String.Format("Top-level comments made by {0}:", post.AuthorName))).DistinguishAsync(DistinguishType.Moderator);
-            if(FlairConfig.ContainsKey(post.LinkFlairText)){
+            if(!(post.LinkFlairText is null) && FlairConfig.ContainsKey(post.LinkFlairText)){
                 String userfile = "";
                 using (StreamReader sr = new StreamReader(new FileStream($"data//user//{post.AuthorName}.json", FileMode.OpenOrCreate))){
                     userfile = sr.ReadToEnd();
@@ -105,25 +98,49 @@ namespace redditBot
                 }
             }
         }
-
-
+        object syncThreads = new object();
         async Task newComment(Comment comment){
             if(comment.CreatedUTC < applicationStart) return; //old comment
             //Console.WriteLine($"Post : [{comment.FullName} at {comment.CreatedUTC}]");
             if(comment.AuthorName.Equals(Config["botAcc"]) && comment.Distinguished == DistinguishType.Moderator){
                 return; //only relevant if a post by the botAcc happens, (=> testing)
             }
+
+            lock(syncThreads){
+                if(!lockKeyDistributor.ContainsKey(comment.ParentId)){
+                    lockKeyDistributor[comment.ParentId] = new NewCommentLock(){id = comment.ParentId};
+                }
+            }
+
             Thing parent = comment.Parent ?? await reddit.GetThingByFullnameAsync(comment.ParentId);
+
             if(parent is Post && (parent as Post).AuthorName.Equals(comment.AuthorName)){ //Comment is Toplevel and by the Post Auther
                 String commentline = comment.Body.Split("  \n")[0].Split("\n\n")[0];
-                Comment botComment = (await (parent as Post).GetCommentsAsync()).FirstOrDefault(c => c.AuthorName.Equals(Config["botAcc"]) && c.Distinguished == DistinguishType.Moderator);
-                if(botComment is null){ //send the Sticky Message
-                    await (await (parent as Post).CommentAsync(String.Format("Top-level comments made by {0}:   \n[{1}]({2})", (parent as Post).AuthorName, commentline.Length > 50 ? commentline.Substring(0, 50)+"..." : commentline, comment.Permalink))).DistinguishAsync(DistinguishType.Moderator, true);
-                }else{ // append to the Sticky Message
-                    await botComment.EditTextAsync(botComment.Body + String.Format("  \n[{0}]({1})", commentline.Length > 50 ? commentline.Substring(0, 50)+"..." : commentline, comment.Permalink));
+                lock(lockKeyDistributor[comment.ParentId]){
+                    if(!topLevelSummaries.ContainsKey(comment.ParentId)){ //send the Sticky Message
+                        topLevelSummaries[comment.ParentId] = ((parent as Post).CommentAsync(String.Format("{0} has made the following comment(s) regarding their post:   \n[{1}]({2})", (parent as Post).AuthorName, commentline.Length > 50 ? commentline.Substring(0, 50)+"..." : commentline, comment.Permalink)).Result);
+                        topLevelSummaries[comment.ParentId].DistinguishAsync(DistinguishType.Moderator, true).Wait();
+                    }else{ // append to the Sticky Message
+                        Comment botComment = topLevelSummaries[comment.ParentId];
+                        botComment.EditTextAsync(botComment.Body + String.Format("  \n[{0}]({1})", commentline.Length > 50 ? commentline.Substring(0, 50)+"..." : commentline, comment.Permalink)).Wait();
+                    }
                 }
             }
         }
 
+    }
+
+    class User{
+        public Dictionary<string, int> FlairCount;
+        public DateTime lastEdit;
+
+        public User(){
+            FlairCount = new Dictionary<string, int>();
+            lastEdit = DateTime.MinValue;
+        }
+    }
+
+    class NewCommentLock{
+        public string id;
     }
 }
