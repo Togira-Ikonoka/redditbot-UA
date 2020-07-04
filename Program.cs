@@ -118,9 +118,15 @@ namespace redditBot
                 string commentline = comment.Body.Split("  \n")[0].Split("\n\n")[0];
                 string commentSummary = commentline.Length > 50 ? commentline.Substring(0, 50)+"..." : commentline;
                 lock(lockKeyDistributor[comment.ParentId]){
-                    if(!topLevelSummaries.ContainsKey(comment.ParentId)){ //send the Sticky Message
-                        topLevelSummaries[comment.ParentId] = ((parent as Post).CommentAsync(String.Format($"{(parent as Post).AuthorName} has made the following comment(s) regarding their post:   \n[{commentSummary}]({comment.Permalink})")).Result);
-                        topLevelSummaries[comment.ParentId].DistinguishAsync(DistinguishType.Moderator, true).Wait();
+                    if(!topLevelSummaries.ContainsKey(comment.ParentId)){ //comment not in memory
+                        Comment botComment = (parent as Post).GetCommentsAsync().Result.FirstOrDefault(c => c.AuthorName.Equals(Config["botAcc"]) && c.Distinguished == DistinguishType.Moderator && c.IsStickied);
+                        if(botComment is null){ //send the Sticky Message
+                            topLevelSummaries[comment.ParentId] = ((parent as Post).CommentAsync(String.Format($"{(parent as Post).AuthorName} has made the following comment(s) regarding their post:   \n[{commentSummary}]({comment.Permalink})")).Result);
+                            topLevelSummaries[comment.ParentId].DistinguishAsync(DistinguishType.Moderator, true).Wait();
+                        }else{ // append to the Sticky Message
+                            botComment.EditTextAsync(botComment.Body + String.Format($"  \n[{commentSummary}]({comment.Permalink})")).Wait();
+                            topLevelSummaries[comment.ParentId] = botComment;
+                        }  
                     }else{ // append to the Sticky Message
                         Comment botComment = topLevelSummaries[comment.ParentId];
                         botComment.EditTextAsync(botComment.Body + String.Format($"  \n[{commentSummary}]({comment.Permalink})")).Wait();
