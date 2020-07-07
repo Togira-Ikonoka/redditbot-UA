@@ -52,10 +52,15 @@ namespace redditBot
             ListingStream<Comment> commentStream = subreddit.GetComments().Stream();
             commentStream.Subscribe(async comment => await newComment(comment));
             
+            ListingStream<VotableThing> removedStream = subreddit.GetRemoved().Stream();
+            removedStream.Subscribe(async thing => removedThing(thing));
+            
             await Task.WhenAll(new Task[]{
                     postStream.Enumerate(token),
-                    commentStream.Enumerate(token)
+                    commentStream.Enumerate(token),
+                    removedStream.Enumerate(token)
             });
+            
         }
 
 
@@ -78,8 +83,8 @@ namespace redditBot
                     var d1 = user.lastEdit.Date.AddDays(-1 * ((int)cal.GetDayOfWeek(user.lastEdit)-1));
                     var d2 = post.CreatedUTC.Date.AddDays(-1 * ((int) cal.GetDayOfWeek(post.CreatedUTC)-1));
                     if(d1 != d2){ //Diffrent Week
-                        foreach(var pair in user.FlairCount){
-                            user.FlairCount[pair.Key] = 0;
+                        foreach(var key in user.FlairCount.Keys.ToList()){
+                            user.FlairCount[key] = 0;
                         }
                     }
                 }
@@ -130,6 +135,44 @@ namespace redditBot
                     }else{ // append to the Sticky Message
                         Comment botComment = topLevelSummaries[comment.ParentId];
                         botComment.EditTextAsync(botComment.Body + String.Format($"  \n[{commentSummary}]({comment.Permalink})")).Wait();
+                    }
+                }
+            }
+        }
+
+        async Task removedThing(VotableThing thing){
+            if(thing.CreatedUTC < applicationStart) return;
+            if(thing is Post){
+                Post post = thing as Post; 
+                if(!(post.LinkFlairText is null) && FlairConfig.ContainsKey(post.LinkFlairText)){
+                    String userfile = "";
+                    using (StreamReader sr = new StreamReader(new FileStream($"data//user//{post.AuthorName}.json", FileMode.OpenOrCreate))){
+                        userfile = sr.ReadToEnd();
+                    }
+                    User user;
+                    if(userfile.Equals("")){
+                        user = new User();
+                    }else{
+                        user = JsonConvert.DeserializeObject<User>(userfile);
+                        //Calculate Monday of Week (UTC)
+                        var cal = System.Globalization.DateTimeFormatInfo.CurrentInfo.Calendar;
+                        var d1 = user.lastEdit.Date.AddDays(-1 * ((int)cal.GetDayOfWeek(user.lastEdit)-1));
+                        var d2 = post.CreatedUTC.Date.AddDays(-1 * ((int) cal.GetDayOfWeek(post.CreatedUTC)-1));
+                        if(d1 != d2){ //Diffrent Week
+                            return;
+                        }
+                    }
+                    if(!user.FlairCount.ContainsKey(post.LinkFlairText)){
+                        user.FlairCount.Add(post.LinkFlairText, 0);
+                        return; //flair not yet accounted for with this User
+                    }else{
+                        user.FlairCount[post.LinkFlairText] -= 1;
+                        if(user.FlairCount[post.LinkFlairText] < 0){ //wtf?
+                            user.FlairCount[post.LinkFlairText] = 0;
+                        }
+                    }
+                    using(StreamWriter sw = new StreamWriter(new FileStream($"data//user//{post.AuthorName}.json", FileMode.OpenOrCreate))){
+                        sw.Write(JsonConvert.SerializeObject(user));
                     }
                 }
             }
