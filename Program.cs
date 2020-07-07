@@ -53,7 +53,7 @@ namespace redditBot
             commentStream.Subscribe(async comment => await newComment(comment));
             
             ListingStream<VotableThing> removedStream = subreddit.GetRemoved().Stream();
-            removedStream.Subscribe(async thing => removedThing(thing));
+            removedStream.Subscribe(async thing => await removedThing(thing));
             
             await Task.WhenAll(new Task[]{
                     postStream.Enumerate(token),
@@ -62,8 +62,6 @@ namespace redditBot
             });
             
         }
-
-
         async Task newPost(Post post){
             if(post.CreatedUTC < applicationStart) return; //old post
             //Moved to newComment, only send the sticky message if there actually are comments
@@ -141,7 +139,7 @@ namespace redditBot
         }
 
         async Task removedThing(VotableThing thing){
-            if(thing.CreatedUTC < applicationStart) return;
+            if(thing.FetchedAt.ToUniversalTime() < applicationStart.AddSeconds(5)) return;
             if(thing is Post){
                 Post post = thing as Post; 
                 if(!(post.LinkFlairText is null) && FlairConfig.ContainsKey(post.LinkFlairText)){
