@@ -76,6 +76,9 @@ namespace redditBot
                     user = new User();
                 }else{
                     user = JsonConvert.DeserializeObject<User>(userfile);
+                    if(post.CreatedUTC <= user.lastEdit){//maybe that will fix dupes
+                        return;
+                    }
                     //Calculate Monday of Week (UTC)
                     var cal = System.Globalization.DateTimeFormatInfo.CurrentInfo.Calendar;
                     var d1 = user.lastEdit.Date.AddDays(-1 * ((int)cal.GetDayOfWeek(user.lastEdit)-1));
